@@ -1,0 +1,37 @@
+<%- include("../partials/header")-%>
+
+<div class="container mt-5">
+  <table class="table table-bordered">
+    <thead>
+      <tr>
+        <th scope="col">Date</th>
+        <th scope="col">From</th>
+        <th scope="col">To</th>
+        <th scope="col">Type</th>
+        <th scope="col">Is Check</th>
+
+        <!-- <th scope="col">Is Check<th> -->
+      </tr>
+    </thead>
+    <tbody>
+      <%account.transactions.forEach(function(trans){%>
+        <tr>
+          <td><%=trans.date %></td>
+          <td><%=trans.to%></td>
+          <td><%=trans.from%></td>
+          
+          <%if(account.accountno===trans.from){%>
+            <td>- <%=trans.amount%></td>
+          <%}else{%>
+            <td>+ <%=trans.amount%></td>
+          <%}%>
+          <td><%=trans.isCheck%></td>
+        </tr>
+      <%})%>
+      
+    </tbody>
+  </table>
+</div>
+
+    
+<%- include("../partials/footer")-%>

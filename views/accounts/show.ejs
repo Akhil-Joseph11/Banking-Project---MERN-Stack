@@ -1,0 +1,71 @@
+<%- include("../partials/header")-%>
+
+<div class="container mt-5">
+ <div class="row">
+   
+        <div class="col-sm-12">
+            <div class="jumbotron">
+                <div class="accdetails">
+                    <strong>Account Number</strong>: <%= account.accountno%>
+                </div>
+                <div class="accdetails">
+                    <strong>Account Name</strong>: <%= account.accountname%>
+                </div>
+                <div class="accdetails">
+                    <strong>Branch</strong>: <%= account.branch%>
+                </div>
+                <div class="accdetails">
+                    <strong>Balance</strong>: <%= account.balance%>
+                </div>
+                <div class="accdetails">
+                    <strong>Account type</strong>: <%= account.accounttype%>
+                </div>
+                <div class="accdetails">
+                    <strong>Mobile</strong>: <%= account.mobile%>
+                </div>
+                <div class="accdetails">
+                    <strong>Email</strong>: <%= account.email%>
+                </div>
+                <div class="accdetails">
+                    <strong>address</strong>: <%= account.address%>
+                </div>
+            </div>
+            <div class="row">
+                
+                <% if(!account.isCredit){%>
+                <div class="col-sm-3">
+                        <form action="/cus/profile/acc/<%= account._id%>/gencard" method="POST">
+                            <input name="type" type="hidden" value="credit">
+                            <input type="submit"class="btn btn-success" value="GENERATE CREDIT CARD" id="">
+                        </form>
+                       
+                </div>
+                <%} if(!account.isDebit){%>
+                    <div class="col-sm-6">
+                        <form action="/cus/profile/acc/<%= account._id%>/gencard" method="POST">
+                            <input name="type" type="hidden" value="debit">
+                            <input type="submit"class="btn btn-success" value="GENERATE DEBIT CARD" id="">
+                        </form>
+                    </div>
+                <%}%>
+            </div>
+            <div class="row">
+                <% account.card.forEach(function(card){%>
+                    <div class="col-md-3 mt-3">
+                        <div class="card p-3 text-center">
+                            
+                            <strong>Card No:</strong><%= card.cardno%></h5>
+                            <strong>CVV:</strong><%= card.cvv%></h5>
+                            <strong>Expiry</strong><%= card.expirationDate%></h5>
+                            <strong>Card Type</strong><%= card.cardType%></h5>
+
+                    
+                        </div>
+                    </div>
+               <% })%>
+            </div>
+        </div>
+        
+    </div>
+</div>
+<%- include("../partials/footer")-%>

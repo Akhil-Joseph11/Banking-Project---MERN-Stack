@@ -1,0 +1,110 @@
+<%- include("../partials/header")-%>
+<div class="container mt-5">
+
+
+    <div class="row">
+        <div class="col-sm-12">
+            <div class="jumbotron">
+                <a href="" class="btn btn-success float-right" style="color:white">Edit</a>
+                <div class="accdetails">
+                    <strong>Email Id</strong>: <%= user.email%>
+                </div>
+                <div class="accdetails">
+                    <strong>Mobile Number</strong>: <%= user.mobile%>
+                </div>
+                <div class="accdetails">
+                    <strong>Name</strong>: <%= user.username%>
+                </div>
+                <div class="accdetails">
+                    <strong>Address</strong>: <%= user.address%>
+                </div>
+                <div class="accdetails">
+                    <strong>Gender</strong>: <%= user.gender%>
+                </div>
+                <div class="accdetails">
+                    <strong>DOB</strong>: <%= user.dob.getDate()%>/<%= user.dob.getMonth()%>/<%= user.dob.getFullYear()%>
+                </div>
+                <div class="accdetails">
+                    <strong>Addaar</strong>: <%= user.adhaar%>
+                </div>
+                <!-- <div class="accdetails">
+                    <strong>No. of accounts</strong>: <%= user.email%>
+                </div> -->
+            </div>
+        </div>
+    </div>
+    <%if(user.account){%>
+
+    <div class="addacc">
+        <a href="/cus/profile/acc/new" class="btn btn-success mt-3 mr-3">Create a new account</a>        
+        <!-- <a href="" class="btn btn-primary mt-3 mr-3">Create a new account</a>         -->
+    </div>
+   
+    <div class="row">
+        <% user.account.forEach(function(account){%>
+            <div class="col-md-3 mt-3">
+                <div class="card p-3 text-center">
+                    
+                 
+                        <strong>Account Number</strong>:<%= account.accountno%>
+             
+            
+                        <strong>Account Name</strong>: <%= account.accountname%>
+               
+               
+                        <strong>Branch</strong>: <%= account.branch%>
+                 
+
+                  <% if(account.isAccepted){%>
+                  <a href="/cus/profile/acc/<%= account._id%>" class=" mt-3 btn btn-primary">Show</a>
+                  <%} else{%>
+                    <a href="" class="mt-3 btn btn-primary disabled">Not accepted Yet</a>
+                    <%}%>
+                </div>
+            </div>
+       <% })}%>
+        <!-- <div class="col-md-3 mt-3">
+            <div class="card p-3 text-center">
+                
+                <h5>Account Name</h5>
+                <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Possimus nesciunt voluptatum architecto deserunt? Architecto alias quas veniam et quo? Laboriosam veritatis aut sequi dolores ipsam dicta nisi beatae. Eligendi, at?</p>
+                <a href="" class="btn btn-primary">Show</a>
+            </div>
+        </div>
+        
+        <div class="col-md-3 mt-3">
+            <div class="card p-3 text-center">
+                
+                <h5>Account Name</h5>
+                <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Possimus nesciunt voluptatum architecto deserunt? Architecto alias quas veniam et quo? Laboriosam veritatis aut sequi dolores ipsam dicta nisi beatae. Eligendi, at?</p>
+                <a href="" class="btn btn-primary">Show</a>
+            </div>
+        </div>
+        <div class="col-md-3 mt-3">
+            <div class="card p-3 text-center">
+                
+                <h5>Account Name</h5>
+                <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Possimus nesciunt voluptatum architecto deserunt? Architecto alias quas veniam et quo? Laboriosam veritatis aut sequi dolores ipsam dicta nisi beatae. Eligendi, at?</p>
+                <a href="" class="btn btn-primary">Show</a>
+            </div>
+        </div>
+        <div class="col-md-3 mt-3">
+            <div class="card p-3 text-center">
+                
+                <h5>Account Name</h5>
+                <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Possimus nesciunt voluptatum architecto deserunt? Architecto alias quas veniam et quo? Laboriosam veritatis aut sequi dolores ipsam dicta nisi beatae. Eligendi, at?</p>
+                <a href="" class="btn btn-primary">Show</a>
+            </div>
+        </div>
+        <div class="col-md-3 mt-3">
+            <div class="card p-3 text-center">
+                
+                <h5>Account Name</h5>
+                <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Possimus nesciunt voluptatum architecto deserunt? Architecto alias quas veniam et quo? Laboriosam veritatis aut sequi dolores ipsam dicta nisi beatae. Eligendi, at?</p>
+                <a href="" class="btn btn-primary">Show</a>
+            </div>
+        </div> -->
+    </div>
+</div>   
+    
+<%- include("../partials/footer")-%>
