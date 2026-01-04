@@ -114,10 +114,6 @@ npm start    # Production mode
 - Fawn - Transaction management
 - Nodemailer - Email service
 
-## License
-
-ISC
-
 ## Author
 
 Akhil Joseph
