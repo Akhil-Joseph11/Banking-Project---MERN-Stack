@@ -1,58 +1,75 @@
-var express= require("express"),
-bodyParser = require("body-parser"),
-mongoose = require("mongoose"),
-Customer = require("./models/customer"),
-Account = require("./models/account"),
-passport = require("passport"),
-localStrategy = require("passport-local"),
-seed = require("./seed"),
-sequential = require("sequential-ids"),
-seqid = require("./models/seqid"),
-Employee = require("./models/employee"),
-User = require("./models/user"),
-Benificiary = require("./models/benificiary"),
-Transactions = require("./models/transactions"),
-Checks = require("./models/checks");
+const express = require("express");
+const bodyParser = require("body-parser");
+const mongoose = require("mongoose");
+const passport = require("passport");
+const localStrategy = require("passport-local");
+const expressSession = require("express-session");
+const helmet = require("helmet");
+const rateLimit = require("express-rate-limit");
+const mongoSanitize = require("express-mongo-sanitize");
+const xss = require("xss-clean");
+const hpp = require("hpp");
 
+const config = require("./config/config");
+const connectDB = require("./config/database");
+const { errorHandler, notFound } = require("./middleware/errorHandler");
+const { initializeEmailService } = require("./services/emailService");
 
-var employeeRoutes =require("./routes/employee"),
-customerRoutes = require("./routes/customer"),
-accountRoutes = require("./routes/account"),
-authRoutes = require("./routes/auth"),
-benificiaryRoutes = require("./routes/benificiary"),
-transactionRoutes = require("./routes/transactions"),
-accstatementRoutes = require("./routes/accountstats"),
-checkRoutes = require("./routes/check");
+const User = require("./models/user");
 
-function preceedzero(n){
-    var s = n+"";
-    while (s.length < 4) s = "0" + s;
-    return s;
-}
-function genid(n){
-    var s = "2020"+preceedzero(n);
-    return s;
-}
+const employeeRoutes = require("./routes/employee");
+const customerRoutes = require("./routes/customer");
+const accountRoutes = require("./routes/account");
+const authRoutes = require("./routes/auth");
+const benificiaryRoutes = require("./routes/benificiary");
+const transactionRoutes = require("./routes/transactions");
+const accstatementRoutes = require("./routes/accountstats");
+const checkRoutes = require("./routes/check");
 
-// seed()
-var app = express();
+const app = express();
 
+connectDB();
 
-// // REPLICA SET
+app.use(helmet());
 
-mongoose.connect("mongodb://localhost/premierebank");
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    message: "Too many requests from this IP, please try again later."
+});
+app.use("/api/", limiter);
 
-app.set("view engine","ejs");
-app.use(express.static(__dirname+"/public"));
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: "Too many login attempts, please try again later."
+});
+app.use("/login", authLimiter);
+app.use("/signup", authLimiter);
 
-app.use(bodyParser.urlencoded({extended:true}));
+// Body parser middleware
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.json());
 
+app.use(mongoSanitize());
+app.use(xss());
+app.use(hpp());
 
-app.use(require("express-session")({
-    secret: "This is a secret code for bank",
-    resave:false,
-    saveUninitialized:false
-}))
+// View engine setup
+app.set("view engine", "ejs");
+app.use(express.static(__dirname + "/public"));
+
+// Session configuration
+app.use(expressSession({
+    secret: config.sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: config.nodeEnv === 'production',
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000
+    }
+}));
 
 app.use(passport.initialize());
 app.use(passport.session());
@@ -61,14 +78,12 @@ passport.use(new localStrategy(User.authenticate()));
 passport.serializeUser(User.serializeUser());
 passport.deserializeUser(User.deserializeUser());
 
-app.use(function(req,res,next){
-    res.locals.currentUser= req.user;
-    console.log(req.user)
-    // res.locals.error= req.flash("error");
-    // res.locals.success= req.flash("success");
+app.use(function(req, res, next) {
+    res.locals.currentUser = req.user;
     next();
-})  
+});
 
+initializeEmailService();
 app.use(employeeRoutes);
 app.use(accountRoutes);
 app.use(authRoutes);
@@ -78,20 +93,19 @@ app.use(transactionRoutes);
 app.use(accstatementRoutes);
 app.use(checkRoutes);
 
-
-app.get("/",isLoggedIn,function(req,res){
-    res.render("home");
-});
-
-
-function isLoggedIn(req,res,next){
-    if(req.isAuthenticated()){
-        return next();
+app.get("/", function(req, res) {
+    if (req.isAuthenticated()) {
+        return res.render("home");
     }
     res.redirect("/login");
-}
+});
 
- app.listen(3000,function(req,res){
-    console.log("Hey!!, This website is working at port 3000");
-})
+app.use(notFound);
+app.use(errorHandler);
+const PORT = config.port || 3000;
+app.listen(PORT, function() {
+    console.log(`Server is running on port ${PORT}`);
+    console.log(`Environment: ${config.nodeEnv}`);
+});
 
+module.exports = app;

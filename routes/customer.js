@@ -1,54 +1,42 @@
-var express = require('express');
-var router = express.Router(),
-Customer = require("../models/customer"),
-Account = require("../models/account"),
-User = require("../models/user"),
-Employee = require("../models/employee");
-router.get("/cus",isLoggedIn,function(req,res){
-    
-    res.redirect("/cus/index")
- });
-router.get("/cus/index",isLoggedIn,function(req,res){
-    User.find({},function(err,foundUser){
-        if(err){
-            console.log(err)
-        } else{
-            res.render("index",{user:foundUser});
+const express = require('express');
+const router = express.Router();
+const Customer = require("../models/customer");
+const User = require("../models/user");
+const Employee = require("../models/employee");
+const { asyncHandler } = require("../middleware/errorHandler");
+const { isLoggedIn } = require("../middleware/auth");
+
+// GET Customer index redirect
+router.get("/cus", isLoggedIn, (req, res) => {
+    res.redirect("/cus/index");
+});
+
+// GET Customer index
+router.get("/cus/index", isLoggedIn, asyncHandler(async (req, res) => {
+    const users = await User.find({});
+    res.render("index", { user: users });
+}));
+
+// GET Customer profile
+router.get("/cus/profile", isLoggedIn, asyncHandler(async (req, res) => {
+    try {
+        if (req.user.usertype === "Customer") {
+            const customer = await Customer.findById(req.user.userid).populate("account");
+            if (!customer) {
+                return res.status(404).send("Customer not found");
+            }
+            res.render("accounts/profile", { user: customer });
+        } else {
+            const employee = await Employee.findById(req.user.userid);
+            if (!employee) {
+                return res.status(404).send("Employee not found");
+            }
+            res.render("accounts/profile", { user: employee });
         }
-    })
-})
-
-router.get("/cus/profile",isLoggedIn,function(req,res){
-    if(req.user.usertype=="Customer"){
-    Customer.findById(req.user.userid).populate("account").exec(function(err,foundCustomer){
-        if(err){
-            console.log(err)
-        } else{
-
-            res.render("accounts/profile",{user:foundCustomer});
-
+    } catch (error) {
+        console.error('Profile fetch error:', error);
+        res.status(500).send("Error loading profile: " + error.message);
     }
-    
-})
-} else{
-    Employee.findById(req.user.userid,function(err,foundEmployee){
-        if(err){
-            console.log(err)
-        } else{
-            console.log(foundEmployee)
-            res.render("accounts/profile",{user:foundEmployee});
-    }
-    
-})
-}
-})
-
-
-function isLoggedIn(req,res,next){
-    if(req.isAuthenticated()){
-        return next();
-    }
-    res.redirect("/login");
-}
+}));
 
 module.exports = router;

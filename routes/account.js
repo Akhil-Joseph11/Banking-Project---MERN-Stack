@@ -1,158 +1,120 @@
-var express = require('express');
-var router = express.Router(),
-Customer = require("../models/customer"),
-Account = require("../models/account"),
-User = require("../models/user"),
-Employee = require("../models/employee"),
-Card = require("../models/card");
+const express = require('express');
+const router = express.Router();
+const Customer = require("../models/customer");
+const Account = require("../models/account");
+const Card = require("../models/card");
+const { asyncHandler } = require("../middleware/errorHandler");
+const { isLoggedIn, isCustomer, ownsAccount } = require("../middleware/auth");
+const { validationRules } = require("../middleware/validator");
+const { genAccountId, genCardNumber, genCVV } = require("../utils/idGenerator");
 
+// GET New account page
+router.get("/cus/profile/acc/new", isLoggedIn, isCustomer, (req, res) => {
+    res.render("accounts/new");
+});
 
-function preceedzero(n){
-    var s = n+"";
-    while (s.length < 4) s = "0" + s;
-    return s;
-}
-function genid(n){
-    var s = "2020"+preceedzero(n);
-    return s;
-}
-function gencard(n){
-    var s =  Math.floor(1000000000 + Math.random() * 9000000000).toString() + preceedzero(n);
-    return s;
-}
-router.get("/cus/profile/acc/new",isLoggedIn,function(req,res){
-    res.render("accounts/new")
-})
-router.post("/cus/profile/acc",isLoggedIn,function(req,res){
-    Customer.findById(req.user.userid,function(err,foundCustomer){
-        if(err){
-            console.log(err)
-        } else{
-           console.log(foundCustomer);
-            Account.create(req.body.account,function(err,newlyCreated){
-                if(err){
-                 console.log(err);
-                } else{
-                    Account.count(function(err,c){
-                        if(err){
-                            console.log(err)
-                        }   else{
-                            newlyCreated.accountno = genid(c+1);
-                            newlyCreated.save();
-                            foundCustomer.account.push(newlyCreated);
-                            foundCustomer.save();
-                            console.log(newlyCreated);
-                            res.redirect("/cus/profile");
-                        }
-                    })
-
-                }
-            })
-            
+// POST Create account
+router.post("/cus/profile/acc", isLoggedIn, isCustomer, validationRules.createAccount, asyncHandler(async (req, res) => {
+    try {
+        const customer = await Customer.findById(req.user.userid);
+        if (!customer) {
+            return res.status(404).send("Customer not found");
         }
-    })
-   
- })
 
- router.get("/cus/profile/acc/:id",isLoggedIn,function(req,res){
-        Customer.findById(req.user.userid,function(err,foundEmployee){
-            if(err){
-                console.log(err)
-            } else{
-                // console.log(foundEmployee)
-                foundEmployee.account.forEach(function(accountid){
-                    if(accountid==req.params.id){
-                        Account.findById(req.params.id).populate("card").exec(function(err,foundAccount){
-                            if(err){
-                                console.log(err)
-                            } else{
-                                res.render("accounts/show",{account:foundAccount});
-                            }
-                        })
-                    } else{
-                        console.log("Not found")
-                        // back();
-                    }
-                })
-            }
-        })
- })
+        const accountData = {
+            ...req.body.account,
+            accountname: req.body.account.accountname.trim()
+        };
 
- router.post("/cus/profile/acc/:id/gencard",isLoggedIn,function(req,res){
-     Account.findById(req.params.id,function(err,foundAccount){
-         if(err){
-            console.log(err)
-         } else{
-            if(req.body.type == "credit"){
-                if(foundAccount.isCredit){
-                    console.log("Already Have an card");
-                    res.redirect("/cus/profile/acc/"+req.params.id)
-                } else{
-                    Card.create({cardType:"credit"},function(err,createdCard){
-                        if(err){
-                            console.log(err);
-                            
-                        } else{
-                        console.log("Hello"+createdCard);
-                        Card.count(function(err,c){
-                            if(err){
-                                console.log(err)
-                            }   else{
-                            createdCard.cardno= gencard(c+1);
-                            createdCard.cvv = Math.floor(Math.random()*900);
-                            createdCard.save();
-                            foundAccount.card.push(createdCard);
-                            foundAccount.isCredit = true;
-                            foundAccount.save();
-                            console.log(createdCard);
-                            console.log(foundAccount);
-                            res.redirect("/cus/profile/acc/"+req.params.id)
-                            }
-                        })
-                        }
-                        
-                       
-                    })
-                }
-             }
-             else if(req.body.type == "debit"){
-                if(foundAccount.isDebit){
-                    console.log("Already Have an card");
-                    res.redirect("/cus/profile/acc/"+req.params.id)
-                } else{
-                    Card.create({cardType:"debit"},function(err,createdCard){
-                        if(err){
-                            console.log(err);
-                            
-                        } else{
-                        console.log("Hello"+createdCard);
-                        Card.count(function(err,c){
-                            if(err){
-                                console.log(err)
-                            }   else{
-                            createdCard.cardno= gencard(c+1);
-                            createdCard.cvv = Math.floor(Math.random()*900);
-                            createdCard.save();
-                            foundAccount.card.push(createdCard);
-                            foundAccount.isDebit = true;
-                            foundAccount.save();
-                            console.log(createdCard);
-                            console.log(foundAccount);
-                            res.redirect("/cus/profile/acc/"+req.params.id)
-                            }
-                        })
-                        }
-                    })
-                }
-             }
-         }
-     })
- })
- function isLoggedIn(req,res,next){
-    if(req.isAuthenticated()){
-        return next();
+        const newlyCreated = await Account.create(accountData);
+        
+        // Generate account number
+        const accountCount = await Account.countDocuments();
+        newlyCreated.accountno = parseInt(genAccountId(accountCount));
+        await newlyCreated.save();
+
+        customer.account.push(newlyCreated._id);
+        await customer.save();
+
+        res.redirect("/cus/profile");
+    } catch (error) {
+        console.error('Account creation error:', error);
+        res.status(400).render("accounts/new", {
+            error: error.message || "Failed to create account. Please try again."
+        });
     }
-    res.redirect("/login");
-}
+}));
 
- module.exports = router;
+// GET Account details
+router.get("/cus/profile/acc/:id", isLoggedIn, isCustomer, ownsAccount, asyncHandler(async (req, res) => {
+    const account = await Account.findById(req.params.id).populate("card");
+    if (!account) {
+        return res.status(404).send("Account not found");
+    }
+    res.render("accounts/show", { account: account });
+}));
+
+// POST Generate card
+router.post("/cus/profile/acc/:id/gencard", isLoggedIn, isCustomer, ownsAccount, asyncHandler(async (req, res) => {
+    try {
+        const { type } = req.body;
+        const account = await Account.findById(req.params.id);
+
+        if (!account) {
+            return res.status(404).send("Account not found");
+        }
+
+        if (!account.isAccepted) {
+            return res.status(400).send("Account must be activated before generating cards");
+        }
+
+        if (type === "credit") {
+            if (account.isCredit) {
+                return res.redirect(`/cus/profile/acc/${req.params.id}`);
+            }
+
+            const cardCount = await Card.countDocuments();
+            const cardNumber = genCardNumber(cardCount);
+            const cvv = genCVV();
+
+            const createdCard = await Card.create({
+                cardType: "credit",
+                cardno: cardNumber,
+                cvv: cvv
+            });
+
+            account.card.push(createdCard._id);
+            account.isCredit = true;
+            await account.save();
+
+            res.redirect(`/cus/profile/acc/${req.params.id}`);
+        } else if (type === "debit") {
+            if (account.isDebit) {
+                return res.redirect(`/cus/profile/acc/${req.params.id}`);
+            }
+
+            const cardCount = await Card.countDocuments();
+            const cardNumber = genCardNumber(cardCount);
+            const cvv = genCVV();
+
+            const createdCard = await Card.create({
+                cardType: "debit",
+                cardno: cardNumber,
+                cvv: cvv
+            });
+
+            account.card.push(createdCard._id);
+            account.isDebit = true;
+            await account.save();
+
+            res.redirect(`/cus/profile/acc/${req.params.id}`);
+        } else {
+            return res.status(400).send("Invalid card type");
+        }
+    } catch (error) {
+        console.error('Card generation error:', error);
+        res.status(500).send("Failed to generate card: " + error.message);
+    }
+}));
+
+module.exports = router;

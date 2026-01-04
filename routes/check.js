@@ -1,206 +1,179 @@
-var express = require('express');
-var router = express.Router(),
-Customer = require("../models/customer"),
-Account = require("../models/account"),
-User = require("../models/user"),
-Employee = require("../models/employee"),
-Transactions = require("../models/transactions"),
-Checks = require("../models/checks");
-function preceedzero(n){
-    var s = n+"";
-    while (s.length < 4) s = "0" + s;
-    return s;
-}
-function genid(n){
-    var s = "CHECK"+preceedzero(n);
-    return s;
-}
-var Fawn = require("fawn");
-const mongoose = require('mongoose');
-mongoose.connect("mongodb://localhost/premierebank");
-var nodemailer = require("nodemailer");
-const prompt = require('prompt');
-// Fawn.init(mongoose);
-var mailuser,mailpass;
-var smtpTransport = nodemailer.createTransport({
-    service: "Gmail",
-    auth: {
-        user:"bankserver1001@gmail.com",
-        pass: "softwareengineering"
+const express = require('express');
+const router = express.Router();
+const Customer = require("../models/customer");
+const Account = require("../models/account");
+const Checks = require("../models/checks");
+const Transactions = require("../models/transactions");
+const { asyncHandler } = require("../middleware/errorHandler");
+const { isLoggedIn, isCustomer, isEmployee, ownsAccount } = require("../middleware/auth");
+const { validationRules } = require("../middleware/validator");
+const transactionService = require("../services/transactionService");
+const emailService = require("../services/emailService");
+const { genCheckId } = require("../utils/idGenerator");
+
+// GET Check entry page (Customer)
+router.get("/cus/check", isLoggedIn, isCustomer, asyncHandler(async (req, res) => {
+    const customer = await Customer.findById(req.user.userid).populate("account");
+    if (!customer) {
+        return res.status(404).send("Customer not found");
     }
-});
-var rand,mailOptions,host,link;
-router.get("/cus/check",isLoggedIn,function(req,res){
-    Customer.findById(req.user.userid).populate("account").exec(function(err,customer){
-        if(err){
-            console.log(err);
-        } else{
-        res.render("checks/entry",{customer:customer});    
-        }
-    })
-})
+    res.render("checks/entry", { customer: customer });
+}));
 
-router.get("/cus/check/:id",isLoggedIn,function(req,res){
-    Account.findById(req.params.id).populate("check").exec(function(err,foundAccount){
-        if(err){
-            console.log(err);
-        } else{
-            res.render("checks/show.ejs",{account:foundAccount});
-        }
-    })
-})
+// GET Account checks
+router.get("/cus/check/:id", isLoggedIn, isCustomer, ownsAccount, asyncHandler(async (req, res) => {
+    const account = await Account.findById(req.params.id).populate("check");
+    if (!account) {
+        return res.status(404).send("Account not found");
+    }
+    res.render("checks/show", { account: account });
+}));
 
-router.get("/cus/check/:id/gencheck",isLoggedIn,function(req,res){
-    Account.findById(req.params.id).populate("checks").exec(function(err,foundAccount){
-        if(err){
-            console.log(err);
-        } else{
-
-                    Checks.count(function(err,c){
-                        if(err){
-                            console.log(err)
-                        }   else{
-                            Checks.create({},function(err,checkAcc){
-                                if(err){
-                                    console.log(err)
-                                } else{
-                                    checkAcc.checkno = genid(c+1);
-                                    checkAcc.save();
-                                    foundAccount.check.push(checkAcc);
-                                    foundAccount.save();
-                                    console.log(foundAccount);
-                                    console.log(checkAcc);
-                                    res.redirect('/cus/check/'+req.params.id);
-                                }
-                            })
-                        }
-                })
-            
+// POST Generate checkbook
+router.get("/cus/check/:id/gencheck", isLoggedIn, isCustomer, ownsAccount, asyncHandler(async (req, res) => {
+    try {
+        const account = await Account.findById(req.params.id);
+        if (!account) {
+            return res.status(404).send("Account not found");
         }
-    })
-})
 
-router.post("/cus/check/:id/:checkid",isLoggedIn,function(req,res){
-    Checks.findByIdAndUpdate(req.params.checkid,{isLost:true},function(err,check){
-        if(err){
-            console.log(err);
-        } else{
-            res.redirect("/cus/check/"+req.params.id)
+        if (!account.isAccepted) {
+            return res.status(400).send("Account must be activated before generating checks");
         }
-    })
-})
-router.get("/emp/addcheck/",isLoggedIn,function(req,res){
+
+        const checkCount = await Checks.countDocuments();
+        const check = await Checks.create({
+            checkno: genCheckId(checkCount + 1)
+        });
+
+        account.check.push(check._id);
+        await account.save();
+
+        res.redirect(`/cus/check/${req.params.id}`);
+    } catch (error) {
+        console.error('Check generation error:', error);
+        res.status(500).send("Failed to generate check: " + error.message);
+    }
+}));
+
+// POST Report check as lost
+router.post("/cus/check/:id/:checkid", isLoggedIn, isCustomer, ownsAccount, asyncHandler(async (req, res) => {
+    try {
+        const check = await Checks.findById(req.params.checkid);
+        if (!check) {
+            return res.status(404).send("Check not found");
+        }
+
+        check.isLost = true;
+        await check.save();
+
+        res.redirect(`/cus/check/${req.params.id}`);
+    } catch (error) {
+        console.error('Check report error:', error);
+        res.status(500).send("Failed to report check: " + error.message);
+    }
+}));
+
+// GET Employee check entry page
+router.get("/emp/addcheck/", isLoggedIn, isEmployee, (req, res) => {
     res.render("checks/empcheck");
-})
-router.post("/emp/addcheck/",isLoggedIn,function(req,res){
-    // (async () => {
-    //     try {
-        
-            Checks.findOne({checkno:req.body.check.checkno},function(err,check){
-                if(err){
-                    console.log(err);
-                    res.send("invalid Check")
-                } else{
-                    if(check.isUsed||check.isLost){
-                        console.log(err);
-                        res.send("already used");
-                    } else{
-                    Account.findOne({accountno:req.body.check.from},function(err,foundAccount){
-                        if(err){
-                            console.log(err);
-                        } else{
-                            Account.findOne({accountno:req.body.check.to},function(err,benAccount){
-                                if(err){
-                                    console.log(err);
-                                } else{
-                                    (async () => {
-                                        try {
-                                    await transfer(parseInt(foundAccount.accountno),parseInt(benAccount.accountno),parseInt(req.body.check.amount))            
-                                    Transactions.create({from:foundAccount.accountno,to:benAccount.accountno,amount:req.body.check.amount,isCheck:true},function(err,trans){
-                                        if(err){
-                                            console.log(err);
-                                        } else{
-        
-                                            check.isUsed= true;
-                                            check.save();
-                                            foundAccount.transactions.push(trans);
-                                            foundAccount.save();
-                                            benAccount.transactions.push(trans);
-                                            benAccount.save();
-                                            console.log(foundAccount);
-                                            console.log(benAccount);
-                                         
-                                            var receivermail={
-                                                to :"bankserver1001@gmail.com",
-                                                subject :"Premiere Bank",
-                                                html : "Your amount has been credited from the bank "+req.body.check.amount+" <br>"
-                                                };
-                                            var sendermail={
-                                                to : "bankserver1001@gmail.com",
-                                                subject : "Premiere Bank",
-                                                html : "Your amount has been debited from the bank "+req.body.check.amount+" <br>"
-                                            }
-                                          
-                                        
-                                            smtpTransport.sendMail(receivermail, function(error, response1){
-                                             if(error){
-                                                    console.log(error);
-                                                     res.send("error Occured sending mail");
-                                             }else{
-                                                smtpTransport.sendMail(sendermail, function(error, response2){
-                                                    if(error){
-                                                           console.log(error);
-                                                            res.send("error Occured sending mail");
-                                                    }else{
-                                                          res.send("success")
-                                                        }
-                                              
-                                           })
-                                                 }
-                                       
-                                    })
-                                        }
-                                    })
-                                } catch (err) {
-                                    console.log('error: ' + err)
-                                  }
-                                })()
-                                }
-                            })
-                            
-                        }
-                    })  
-                }
-                }
-            })
-        // } catch (err) {
-        //     console.log('error: ' + err)
-        //   }
-        // })()
-        
+});
 
-})
-function isLoggedIn(req,res,next){
-    if(req.isAuthenticated()){
-        return next();
+// POST Process check transaction (Employee)
+router.post("/emp/addcheck/", isLoggedIn, isEmployee, validationRules.checkTransaction, asyncHandler(async (req, res) => {
+    try {
+        const { checkno, from, to, amount } = req.body.check;
+
+        // Find check
+        const check = await Checks.findOne({ checkno: checkno });
+        if (!check) {
+            return res.status(404).send("Invalid check number");
+        }
+
+        if (check.isUsed) {
+            return res.status(400).send("Check has already been used");
+        }
+
+        if (check.isLost) {
+            return res.status(400).send("Check has been reported as lost");
+        }
+
+        // Find accounts
+        const senderAccount = await Account.findOne({ accountno: parseInt(from) });
+        const receiverAccount = await Account.findOne({ accountno: parseInt(to) });
+
+        if (!senderAccount) {
+            return res.status(404).send("Sender account not found");
+        }
+
+        if (!receiverAccount) {
+            return res.status(404).send("Receiver account not found");
+        }
+
+        if (!senderAccount.isAccepted || !receiverAccount.isAccepted) {
+            return res.status(400).send("One or both accounts are not activated");
+        }
+
+        // Perform transfer
+        const transferResult = await transactionService.transfer(
+            parseInt(from),
+            parseInt(to),
+            parseFloat(amount)
+        );
+
+        if (!transferResult.success) {
+            return res.status(400).send("Transaction failed: " + (transferResult.message || "Unknown error"));
+        }
+
+        // Mark check as used
+        check.isUsed = true;
+        check.amount = parseFloat(amount);
+        check.from = senderAccount._id;
+        check.to = receiverAccount._id;
+        await check.save();
+
+        // Create transaction record
+        const transaction = await Transactions.create({
+            from: parseInt(from),
+            to: parseInt(to),
+            amount: parseFloat(amount),
+            isCheck: true
+        });
+
+        // Update account transaction arrays
+        senderAccount.transactions.push(transaction._id);
+        receiverAccount.transactions.push(transaction._id);
+        await senderAccount.save();
+        await receiverAccount.save();
+
+        // Send email notifications
+        try {
+            if (senderAccount.email) {
+                await emailService.sendTransactionNotification(
+                    senderAccount.email,
+                    amount,
+                    'debit',
+                    from
+                );
+            }
+            if (receiverAccount.email) {
+                await emailService.sendTransactionNotification(
+                    receiverAccount.email,
+                    amount,
+                    'credit',
+                    to
+                );
+            }
+        } catch (emailError) {
+            console.error('Email notification error:', emailError);
+            // Don't fail transaction if email fails
+        }
+
+        res.send("success");
+    } catch (error) {
+        console.error('Check transaction error:', error);
+        res.status(500).send("Transaction failed: " + error.message);
     }
-    res.redirect("/login");
-}
-async function transfer(senderAccountno,receiverAccountno,amount){
-    var task = Fawn.Task();
-// try{
-    task.update(Account, {accountno: senderAccountno},  {$inc: {balance: -amount}});
-    task.update(Account, {accountno: receiverAccountno},  {$inc: {balance: amount}});
-    task.run({useMongoose: true})
-    .then(function(){
-        // update is complete
-      })
-      .catch(function(err){
-        // Everything has been rolled back.
-        
-        // log the error which caused the failure
-        console.log(err);
-      });
+}));
 
-}
 module.exports = router;

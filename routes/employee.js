@@ -1,116 +1,66 @@
-var express = require('express');
-var router = express.Router(),
-Customer = require("../models/customer"),
-Account = require("../models/account"),
-User = require("../models/user"),
-Employee = require("../models/employee");
-router.get("/emp",isLoggedIn,function(req,res){
-    
-    res.redirect("/emp/index")
- });
-router.get("/emp/index",isLoggedIn,function(req,res){
-    User.find({},function(err,foundUser){
-        if(err){
-            console.log(err)
-        } else{
-            res.render("index",{user:foundUser});
-        }
-    })
-})
+const express = require('express');
+const router = express.Router();
+const Customer = require("../models/customer");
+const Account = require("../models/account");
+const User = require("../models/user");
+const Employee = require("../models/employee");
+const { asyncHandler } = require("../middleware/errorHandler");
+const { isLoggedIn, isEmployee } = require("../middleware/auth");
 
-router.get("/emp/customers",isLoggedIn,function(req,res){
-    Customer.find({},function(err,foundCustomers){
-        if(err){
-            console.log(err);
-        } else{
-           res.render("employee/customers",{customers:foundCustomers});
+// GET Employee index redirect
+router.get("/emp", isLoggedIn, isEmployee, (req, res) => {
+    res.redirect("/emp/index");
+});
 
-        }
-    })
-})
+// GET Employee index
+router.get("/emp/index", isLoggedIn, isEmployee, asyncHandler(async (req, res) => {
+    const users = await User.find({});
+    res.render("index", { user: users });
+}));
 
-router.get("/emp/customers/:id",isLoggedIn,function(req,res){
-    Customer.findById(req.params.id).populate("account").exec(function(err,foundCustomer){
-       if(err){
-           console.log(err);
-       } else{
-           res.render("employee/view",{customer:foundCustomer})
-       }
-    })
-})
+// GET All customers
+router.get("/emp/customers", isLoggedIn, isEmployee, asyncHandler(async (req, res) => {
+    const customers = await Customer.find({});
+    res.render("employee/customers", { customers: customers });
+}));
 
-router.get("/emp/customers/:id/:accid/edit",isLoggedIn,function(req,res){
-   Account.findById(req.params.id).populate("account").exec(function(err,foundCustomer){
-      if(err){
-          console.log(err);
-      } else{
-       Account.findById(req.params.accid,function(err,foundAccount){
-           if(err){
-               console.log(err);
-           } else{
-               res.render("employee/edit",{account:foundAccount})
-           }
-        })
-      }
-   })
-})
-
-//Customer Req
-
-router.get("/emp/requests",isLoggedIn,function(req,res){
-   Account.find({isAccepted:false},function(err,foundAccounts){
-       if(err){
-           console.log(err)
-       } else{
-           console.log("found");
-           console.log(foundAccounts);
-           res.render("employee/request",{accounts:foundAccounts})
-       }
-   })
-})
-
-
-router.get("/emp/requests/:id",isLoggedIn,function(req,res){
-   Account.findByIdAndUpdate(req.params.id,{isAccepted:true},function(err,foundAccount){
-       if(err){
-           console.log(err)
-       } else{
-           console.log(foundAccount)
-           res.redirect("/emp/requests")
-       }
-   })
-})
-
-router.get("/emp/profile",isLoggedIn,function(req,res){
-    if(req.user.usertype=="Customer"){
-    Customer.findById(req.user.userid).populate("account").exec(function(err,foundCustomer){
-        if(err){
-            console.log(err)
-        } else{
-
-            res.render("accounts/profile",{user:foundCustomer});
-
+// GET Customer details
+router.get("/emp/customers/:id", isLoggedIn, isEmployee, asyncHandler(async (req, res) => {
+    const customer = await Customer.findById(req.params.id).populate("account");
+    if (!customer) {
+        return res.status(404).send("Customer not found");
     }
-    
-})
-} else{
-    Employee.findById(req.user.userid,function(err,foundEmployee){
-        if(err){
-            console.log(err)
-        } else{
-            console.log(foundEmployee)
-            res.render("accounts/profile",{user:foundEmployee});
-    }
-    
-})
-}
-})
+    res.render("employee/view", { customer: customer });
+}));
 
-function isLoggedIn(req,res,next){
-    if(req.isAuthenticated()){
-        return next();
+// GET Edit account page
+router.get("/emp/customers/:id/:accid/edit", isLoggedIn, isEmployee, asyncHandler(async (req, res) => {
+    const account = await Account.findById(req.params.accid);
+    if (!account) {
+        return res.status(404).send("Account not found");
     }
-    res.redirect("/login");
-}
+    res.render("employee/edit", { account: account });
+}));
+
+// GET Account requests
+router.get("/emp/requests", isLoggedIn, isEmployee, asyncHandler(async (req, res) => {
+    const accounts = await Account.find({ isAccepted: false });
+    res.render("employee/request", { accounts: accounts });
+}));
+
+// PUT Accept account request
+router.get("/emp/requests/:id", isLoggedIn, isEmployee, asyncHandler(async (req, res) => {
+    const account = await Account.findByIdAndUpdate(
+        req.params.id,
+        { isAccepted: true },
+        { new: true }
+    );
+    
+    if (!account) {
+        return res.status(404).send("Account not found");
+    }
+
+    res.redirect("/emp/requests");
+}));
 
 module.exports = router;

@@ -1,194 +1,155 @@
-var express = require('express');
-var router = express.Router(),
-Customer = require("../models/customer"),
-Account = require("../models/account"),
-User = require("../models/user"),
-Employee = require("../models/employee"),
-Transactions = require("../models/transactions");
-Fawn = require("fawn");
-const mongoose = require('mongoose');
-mongoose.connect("mongodb://localhost/premierebank");
-var nodemailer = require("nodemailer");
-const prompt = require('prompt');
-Fawn.init(mongoose);
-var mailuser,mailpass;
-var smtpTransport = nodemailer.createTransport({
-    service: "Gmail",
-    auth: {
-        user:"bankserver1001@gmail.com",
-        pass: "softwareengineering"
+const express = require('express');
+const router = express.Router();
+const Customer = require("../models/customer");
+const Account = require("../models/account");
+const Transactions = require("../models/transactions");
+const { asyncHandler } = require("../middleware/errorHandler");
+const { isLoggedIn, isCustomer, ownsAccount } = require("../middleware/auth");
+const { validationRules } = require("../middleware/validator");
+const transactionService = require("../services/transactionService");
+const emailService = require("../services/emailService");
+
+// Store verification codes (In production, use Redis)
+const verificationCodes = new Map();
+
+// GET Transactions entry page
+router.get("/cus/transactions", isLoggedIn, isCustomer, asyncHandler(async (req, res) => {
+    const customer = await Customer.findById(req.user.userid).populate("account");
+    if (!customer) {
+        return res.status(404).send("Customer not found");
     }
+    res.render("transactions/entry", { customer: customer });
+}));
+
+// GET New transaction page
+router.get("/cus/transactions/:id/new", isLoggedIn, isCustomer, ownsAccount, asyncHandler(async (req, res) => {
+    const account = await Account.findById(req.params.id).populate("benificiary");
+    if (!account) {
+        return res.status(404).send("Account not found");
+    }
+    res.render("transactions/new", { account: account });
+}));
+
+// POST Send verification email
+router.get("/cus/transactions/:id/sendMail", isLoggedIn, isCustomer, ownsAccount, asyncHandler(async (req, res) => {
+    const account = await Account.findById(req.params.id);
+    if (!account) {
+        return res.status(404).send("Account not found");
+    }
+
+    const rand = Math.floor(100000 + Math.random() * 900000); // 6-digit code
+    const email = account.email || req.user.email;
+
+    // Store verification code with expiry (10 minutes)
+    verificationCodes.set(req.user._id.toString(), {
+        code: rand,
+        expiry: Date.now() + 10 * 60 * 1000,
+        accountId: req.params.id
+    });
+
+    try {
+        await emailService.sendVerificationCode(email, rand);
+        res.redirect(`/cus/transactions/${req.params.id}/sendMail/new`);
+    } catch (error) {
+        console.error('Email send error:', error);
+        res.status(500).send("Error sending verification email. Please try again.");
+    }
+}));
+
+// GET Verification page
+router.get("/cus/transactions/:id/sendMail/new", isLoggedIn, isCustomer, (req, res) => {
+    res.render("transactions/verify", { accountid: req.params.id });
 });
-var rand,mailOptions,host,link;
 
+// POST Verify code
+router.post("/cus/transactions/:id/verify", isLoggedIn, isCustomer, asyncHandler(async (req, res) => {
+    const { randcode } = req.body;
+    const storedCode = verificationCodes.get(req.user._id.toString());
 
-router.get("/cus/transactions",isLoggedIn,function(req,res){
-    Customer.findById(req.user.userid).populate("account").exec(function(err,foundCustomer){
-        if(err){
-            console.log(err)
-        } else{
-            res.render("transactions/entry",{customer:foundCustomer});
-        }
-    })
-})
-
-router.get("/cus/transactions/:id/new",isLoggedIn,function(req,res){
-    Account.findById(req.params.id).populate("benificiary").exec(function(err,foundAccount){
-        if(err){
-            console.log(err)
-        } else{
-            console.log(foundAccount);
-            
-            res.render("transactions/new",{account:foundAccount});
-        }
-    })
-})
-router.put("/cus/trans/check",function(req,res){
-    
-    transfer(20200002,20200003,300);
-    
-    
-})
-router.post("/cus/transactions/:id",isLoggedIn,function(req,res){
-    Account.findById(req.params.id).populate("benificiary").exec(function(err,foundAccount){
-        if(err){
-            console.log(err)
-        } else{
-            // console.log(+1);
-
-            if(foundAccount.balance>0&&foundAccount.balance>parseInt(req.body.transactions.amount)){
-                
-            Account.findOne({accountno:req.body.transactions.benacc},function(err,benacc){
-                if(err){
-                    console.log(err)
-                } else{
-                    
-                    foundAccount.benificiary.forEach(function(bencomp){
-                        if(benacc.accountno==bencomp.accountno){
-
-                            (async () => {
-                                    try {
-                                        console.log(bencomp.accountno+" "+foundAccount.accountno);
-                                        
-                                        await transfer(parseInt(foundAccount.accountno),parseInt(bencomp.accountno),parseInt(req.body.transactions.amount))
-                                        
-                                        Transactions.create({from:foundAccount.accountno,to:bencomp.accountno,amount:req.body.transactions.amount},function(err,trans){
-                                            if(err){
-                                                console.log(err);
-                                            } else{
-                                                foundAccount.transactions.push(trans);
-                                                foundAccount.save();
-                                                benacc.transactions.push(trans);
-                                                benacc.save();
-                                                console.log(foundAccount);
-                                                console.log(benacc);
-                                             
-                                                var receivermail={
-                                                    to :"bankserver1001@gmail.com",
-                                                    subject :"Premiere Bank",
-                                                    html : "Your amount has been credited from the bank "+req.body.transactions.amount+" <br>"
-                                                    };
-                                                var sendermail={
-                                                    to : "bankserver1001@gmail.com",
-                                                    subject : "Premiere Bank",
-                                                    html : "Your amount has been debited from the bank "+req.body.transactions.amount+" <br>"
-                                                }
-                                              
-                                            
-                                                smtpTransport.sendMail(receivermail, function(error, response1){
-                                                 if(error){
-                                                        console.log(error);
-                                                         res.send("error Occured sending mail");
-                                                 }else{
-                                                    smtpTransport.sendMail(sendermail, function(error, response2){
-                                                        if(error){
-                                                               console.log(error);
-                                                                res.send("error Occured sending mail");
-                                                        }else{
-                                                              res.send("success")
-                                                            }
-                                                  
-                                               })
-                                                     }
-                                           
-                                        })
-                                            }
-                                        })
-                                        
-                                            
-                                    } catch (err) {
-                                      console.log('error: ' + err)
-                                    }
-                                  })()
-                           
-                                        
-                        } else{
-                            res.redirect("/cus/transactions/")
-                        }
-                    })
-                }
-            })
-        }
-    }
-    })
-})
-//Verify Mail
-router.get("/cus/transactions/:id/sendMail",isLoggedIn,function(req,res){
-    rand=Math.floor((Math.random() * 10000000) + 54);
-
-    mailOptions={
-        to : req.query.to,
-        subject : "Please confirm your Transaction",
-        html : "Hello,<br> Please Click on the link to verify your email This is your verification id "+rand+" <br>"
-    }
-    console.log(mailOptions);
-    smtpTransport.sendMail(mailOptions, function(error, response){
-     if(error){
-            console.log(error);
-        res.send("error");
-     }else{
-            console.log("Message sent: " + response.message);
-            res.redirect("/cus/transactions/"+req.params.id+"/sendMail/new");
-         }
-});
-    
-})
-//Verify Mail
-router.get("/cus/transactions/:id/sendMail/new",isLoggedIn,function(req,res){
-    res.render("transactions/verify",{accountid:req.params.id});
-})
-router.post("/cus/transactions/:id/verify",isLoggedIn,function(req,res){
-    var randcode = req.body.randcode;
-    if(randcode==rand){
-        res.redirect("/cus/transactions/"+req.params.id+"/new");
-    } else{
-        res.send("Try Again: <a href='/cus/transactions/:id/sendMail/new'>Try again</a>")
+    if (!storedCode || storedCode.code.toString() !== randcode.toString()) {
+        return res.send("Invalid verification code. <a href='/cus/transactions/" + req.params.id + "/sendMail'>Try again</a>");
     }
 
-    
-})
-function isLoggedIn(req,res,next){
-    if(req.isAuthenticated()){
-        return next();
+    if (Date.now() > storedCode.expiry) {
+        verificationCodes.delete(req.user._id.toString());
+        return res.send("Verification code expired. <a href='/cus/transactions/" + req.params.id + "/sendMail'>Try again</a>");
     }
-    res.redirect("/login");
-}
 
-async function transfer(senderAccountno,receiverAccountno,amount){
-    var task = Fawn.Task();
-// try{
-    task.update(Account, {accountno: senderAccountno},  {$inc: {balance: -amount}});
-    task.update(Account, {accountno: receiverAccountno},  {$inc: {balance: amount}});
-    task.run({useMongoose: true})
-    .then(function(){
-        // update is complete
-      })
-      .catch(function(err){
-        // Everything has been rolled back.
+    // Clear verification code
+    verificationCodes.delete(req.user._id.toString());
+    res.redirect(`/cus/transactions/${req.params.id}/new`);
+}));
+
+// POST Create transaction
+router.post("/cus/transactions/:id", isLoggedIn, isCustomer, ownsAccount, validationRules.transaction, asyncHandler(async (req, res) => {
+    try {
+        const { amount, benacc } = req.body.transactions;
+        const account = req.account;
         
-        // log the error which caused the failure
-        console.log(err);
-      });
-    } 
-    
+        // Check balance
+        if (account.balance < amount) {
+            return res.status(400).send("Insufficient balance");
+        }
+
+        // Find beneficiary account
+        const beneficiary = account.benificiary.find(b => b.accountno === benacc);
+        if (!beneficiary) {
+            return res.status(400).send("Beneficiary not found or not added to this account");
+        }
+
+        // Find beneficiary account details
+        const beneficiaryAccount = await Account.findOne({ accountno: beneficiary.accountno });
+        if (!beneficiaryAccount) {
+            return res.status(404).send("Beneficiary account not found");
+        }
+
+        if (!beneficiaryAccount.isAccepted) {
+            return res.status(400).send("Beneficiary account is not activated");
+        }
+
+        // Perform transfer
+        const transferResult = await transactionService.transfer(
+            parseInt(account.accountno),
+            parseInt(beneficiary.accountno),
+            parseFloat(amount)
+        );
+
+        if (!transferResult.success) {
+            return res.status(400).send("Transaction failed: " + transferResult.message);
+        }
+
+        // Get updated accounts
+        const updatedSenderAccount = await Account.findOne({ accountno: account.accountno });
+        const updatedReceiverAccount = await Account.findOne({ accountno: beneficiary.accountno });
+
+        // Send email notifications
+        try {
+            if (updatedSenderAccount.email) {
+                await emailService.sendTransactionNotification(
+                    updatedSenderAccount.email,
+                    amount,
+                    'debit',
+                    account.accountno
+                );
+            }
+            if (updatedReceiverAccount.email) {
+                await emailService.sendTransactionNotification(
+                    updatedReceiverAccount.email,
+                    amount,
+                    'credit',
+                    beneficiary.accountno
+                );
+            }
+        } catch (emailError) {
+            console.error('Email notification error:', emailError);
+            // Don't fail transaction if email fails
+        }
+
+        res.send("success");
+    } catch (error) {
+        console.error('Transaction error:', error);
+        res.status(500).send("Transaction failed: " + error.message);
+    }
+}));
+
 module.exports = router;
